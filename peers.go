@@ -52,8 +52,6 @@ func (NoPeers) GetAll() []ProtoGetter                           { return []Proto
 
 // RegisterPeerPickerWithWorkspace registers the peer initialization function.
 // It is called once, when the first group is created.
-// Either RegisterPeerPickerWithWorkspace or RegisterPerGroupPeerPickerWithWorkspace should be
-// called exactly once, but not both.
 func RegisterPeerPickerWithWorkspace(ws *Workspace, fn func() PeerPicker) {
 	if ws.portPicker != nil {
 		panic("RegisterPeerPicker called more than once")
