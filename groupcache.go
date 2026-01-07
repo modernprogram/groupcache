@@ -268,7 +268,7 @@ type Stats struct {
 	CacheHits                atomic.Int64 // either cache was good
 	GetFromPeersLatencyLower atomic.Int64 // slowest duration to request value from peers
 	PeerLoads                atomic.Int64 // either remote load or remote cache hit (not an error)
-	PeerErrors               atomic.Int64
+	PeerErrors               atomic.Int64 // errors when loading values from peers
 	Loads                    atomic.Int64 // (gets - cacheHits)
 	LoadsDeduped             atomic.Int64 // after singleflight
 	LocalLoads               atomic.Int64 // total good local loads
