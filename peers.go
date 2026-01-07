@@ -56,14 +56,14 @@ func RegisterPeerPickerWithWorkspace(ws *Workspace, fn func() PeerPicker) {
 	if ws.portPicker != nil {
 		panic("RegisterPeerPicker called more than once")
 	}
-	ws.portPicker = func(_ string) PeerPicker { return fn() }
+	ws.portPicker = fn
 }
 
-func getPeers(ws *Workspace, groupName string) PeerPicker {
+func getPeers(ws *Workspace) PeerPicker {
 	if ws.portPicker == nil {
 		return NoPeers{}
 	}
-	pk := ws.portPicker(groupName)
+	pk := ws.portPicker()
 	if pk == nil {
 		pk = NoPeers{}
 	}

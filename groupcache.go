@@ -284,7 +284,7 @@ func (g *Group) Name() string {
 
 func (g *Group) initPeers() {
 	if g.peers == nil {
-		g.peers = getPeers(g.ws, g.name)
+		g.peers = getPeers(g.ws)
 	}
 }
 

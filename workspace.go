@@ -8,7 +8,7 @@ import (
 // Workspace holds the "global" state for groupcache.
 type Workspace struct {
 	httpPoolMade bool
-	portPicker   func(groupName string) PeerPicker
+	portPicker   func() PeerPicker
 
 	mu     sync.RWMutex
 	groups map[string]*Group
