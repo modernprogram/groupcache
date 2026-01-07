@@ -331,11 +331,13 @@ func TestPeers(t *testing.T) {
 	}
 	const purgeExpired = true
 	const expiredKeysEvictionInterval = time.Minute
+	const peerLatencyWindow = time.Minute
 	const mainCacheWeight = 8
 	const hotCacheWeight = 1
 	testGroup := newGroup(DefaultWorkspace, "TestPeers-group", purgeExpired,
 		cacheSize, mainCacheWeight, hotCacheWeight,
-		expiredKeysEvictionInterval, GetterFunc(getter), peerList, nil)
+		expiredKeysEvictionInterval, peerLatencyWindow,
+		GetterFunc(getter), peerList, nil)
 	run := func(name string, n int, wantSummary string) {
 		// Reset counters
 		localHits = 0
@@ -465,10 +467,12 @@ func TestNoDedup(t *testing.T) {
 	const testval = "testval"
 	const purgeExpired = true
 	const expiredKeysEvictionInterval = time.Minute
+	const peerLatencyWindow = time.Minute
 	const mainCacheWeight = 8
 	const hotCacheWeight = 1
 	g := newGroup(DefaultWorkspace, "testgroup", purgeExpired, 1024,
 		mainCacheWeight, hotCacheWeight, expiredKeysEvictionInterval,
+		peerLatencyWindow,
 		GetterFunc(func(_ context.Context,
 			key string, dest Sink, info *Info) error {
 			return dest.SetString(testval, time.Time{})
@@ -556,11 +560,12 @@ func TestContextDeadlineOnPeer(t *testing.T) {
 	}
 	const purgeExpired = true
 	const expiredKeysEvictionInterval = time.Minute
+	const peerLatencyWindow = time.Minute
 	const mainCacheWeight = 8
 	const hotCacheWeight = 1
 	testGroup := newGroup(DefaultWorkspace, "TestContextDeadlineOnPeer-group",
 		purgeExpired, cacheSize, mainCacheWeight, hotCacheWeight,
-		expiredKeysEvictionInterval,
+		expiredKeysEvictionInterval, peerLatencyWindow,
 		GetterFunc(getter), peerList, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*300)

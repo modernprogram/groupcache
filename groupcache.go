@@ -108,6 +108,11 @@ type Options struct {
 	// Set to -1 to disable periodic eviction of expired keys.
 	ExpiredKeysEvictionInterval time.Duration
 
+	// PeerLatencyWindow is interval for resetting worst recorded peer latency metric.
+	// It only affects the recording of peer latency metric.
+	// If undefined, defaults to 5-minute period.
+	PeerLatencyWindow time.Duration
+
 	// Logger is optional pluggable logger.
 	// If undefined, groupcache won't log anything.
 	// If defined, groupcache will log errors retrieving keys from peers.
@@ -145,15 +150,21 @@ func NewGroupWithWorkspace(options Options) *Group {
 		options.ExpiredKeysEvictionInterval = 30 * time.Minute
 	}
 
+	if options.PeerLatencyWindow == 0 {
+		options.PeerLatencyWindow = 5 * time.Minute
+	}
+
 	return newGroup(options.Workspace, options.Name, options.PurgeExpired,
 		options.CacheBytesLimit, options.MainCacheWeight, options.HotCacheWeight,
-		options.ExpiredKeysEvictionInterval, options.Getter, nil, options.Logger)
+		options.ExpiredKeysEvictionInterval, options.PeerLatencyWindow,
+		options.Getter, nil, options.Logger)
 }
 
 // If peers is nil, the peerPicker is called via a sync.Once to initialize it.
 func newGroup(ws *Workspace, name string, purgeExpired bool, cacheBytesLimit,
 	mainCacheWeight, hotCacheWeight int64,
-	expiredKeysEvictionInterval time.Duration, getter Getter,
+	expiredKeysEvictionInterval, peerLatencyWindow time.Duration,
+	getter Getter,
 	peers PeerPicker, logger Logger) *Group {
 	if getter == nil {
 		panic("nil Getter")
@@ -164,18 +175,19 @@ func newGroup(ws *Workspace, name string, purgeExpired bool, cacheBytesLimit,
 		panic("duplicate registration of group " + name)
 	}
 	g := &Group{
-		ws:              ws,
-		logger:          logger,
-		name:            name,
-		getter:          getter,
-		peers:           peers,
-		cacheBytesLimit: cacheBytesLimit,
-		mainCacheWeight: mainCacheWeight,
-		hotCacheWeight:  hotCacheWeight,
-		purgeExpired:    purgeExpired,
-		loadGroup:       &singleflight.Group{},
-		setGroup:        &singleflight.Group{},
-		removeGroup:     &singleflight.Group{},
+		ws:                ws,
+		logger:            logger,
+		name:              name,
+		getter:            getter,
+		peers:             peers,
+		cacheBytesLimit:   cacheBytesLimit,
+		mainCacheWeight:   mainCacheWeight,
+		hotCacheWeight:    hotCacheWeight,
+		purgeExpired:      purgeExpired,
+		loadGroup:         &singleflight.Group{},
+		setGroup:          &singleflight.Group{},
+		removeGroup:       &singleflight.Group{},
+		peerLatencyWindow: peerLatencyWindow,
 	}
 	ws.groups[name] = g
 
@@ -247,6 +259,13 @@ type Group struct {
 	// removeGroup ensures that each removed key is only removed
 	// remotely once regardless of the number of concurrent callers.
 	removeGroup flightGroup
+
+	// lastPeerLatencyReset records last time peer latency window was reset.
+	lastPeerLatencyReset time.Time
+
+	// peerLatencyWindow defines the interval for resetting window
+	// for recording worst peer latency.
+	peerLatencyWindow time.Duration
 
 	_ int32 // force Stats to be 8-byte aligned on 32-bit platforms
 
@@ -459,12 +478,21 @@ func (g *Group) load(ctx context.Context, key string, dest Sink,
 			// get value from peers
 			value, err = g.getFromPeer(ctx, peer, key, info)
 
-			// metrics duration compute
-			duration := int64(time.Since(start)) / int64(time.Millisecond)
+			end := time.Now()
 
-			// metrics only store the slowest duration
-			if g.Stats.GetFromPeersLatencyLower.Load() < duration {
-				g.Stats.GetFromPeersLatencyLower.Store(duration)
+			// metrics duration compute
+			duration := int64(end.Sub(start)) / int64(time.Millisecond)
+
+			// we can safely access g.lastPeerLatencyReset here because
+			// we are inside a singleflight request, and it is the
+			// only place that member is accessed.
+			if elapLastPeerLatencyReset := end.Sub(g.lastPeerLatencyReset); elapLastPeerLatencyReset > g.peerLatencyWindow {
+				// reset worst peer latency every peerLatencyWindow interval
+				g.Stats.GetFromPeersLatencyLower.Store(duration) // record new worst latency
+				// reset latency window
+				g.lastPeerLatencyReset = end
+			} else if duration > g.Stats.GetFromPeersLatencyLower.Load() {
+				g.Stats.GetFromPeersLatencyLower.Store(duration) // record new worst latency
 			}
 
 			if err == nil {
