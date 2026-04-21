@@ -260,6 +260,9 @@ type Group struct {
 	// remotely once regardless of the number of concurrent callers.
 	removeGroup flightGroup
 
+	// peerLatencyMu protects peer latency window bookkeeping fields.
+	peerLatencyMu sync.Mutex
+
 	// lastPeerLatencyReset records last time peer latency window was reset.
 	lastPeerLatencyReset time.Time
 
@@ -483,17 +486,7 @@ func (g *Group) load(ctx context.Context, key string, dest Sink,
 			// metrics duration compute
 			duration := int64(end.Sub(start)) / int64(time.Millisecond)
 
-			// we can safely access g.lastPeerLatencyReset here because
-			// we are inside a singleflight request, and it is the
-			// only place that member is accessed.
-			if elapLastPeerLatencyReset := end.Sub(g.lastPeerLatencyReset); elapLastPeerLatencyReset > g.peerLatencyWindow {
-				// reset worst peer latency every peerLatencyWindow interval
-				g.Stats.GetFromPeersLatencyLower.Store(duration) // record new worst latency
-				// reset latency window
-				g.lastPeerLatencyReset = end
-			} else if duration > g.Stats.GetFromPeersLatencyLower.Load() {
-				g.Stats.GetFromPeersLatencyLower.Store(duration) // record new worst latency
-			}
+			g.recordPeerLoadLatency(duration, end)
 
 			if err == nil {
 				g.Stats.PeerLoads.Add(1)
@@ -552,6 +545,20 @@ func (g *Group) load(ctx context.Context, key string, dest Sink,
 		value = viewi.(ByteView)
 	}
 	return
+}
+
+func (g *Group) recordPeerLoadLatency(duration int64, now time.Time) {
+	g.peerLatencyMu.Lock()
+	defer g.peerLatencyMu.Unlock()
+
+	if elapLastPeerLatencyReset := now.Sub(g.lastPeerLatencyReset); elapLastPeerLatencyReset > g.peerLatencyWindow {
+		// reset worst peer latency every peerLatencyWindow interval
+		g.Stats.GetFromPeersLatencyLower.Store(duration) // record new worst latency
+		// reset latency window
+		g.lastPeerLatencyReset = now
+	} else if duration > g.Stats.GetFromPeersLatencyLower.Load() {
+		g.Stats.GetFromPeersLatencyLower.Store(duration) // record new worst latency
+	}
 }
 
 func (g *Group) getLocally(ctx context.Context, key string, dest Sink, info *Info) (ByteView, error) {
@@ -716,8 +723,8 @@ func (g *Group) populateCache(key string, value ByteView, c *cache) {
 	}
 }
 
-// isHotUsageExcessive reports if hot cache exceeded its limit in comparisson to main cache.
-// Conversely, it also reports if main cache did NOT exceed its limit in comparisson to hot cache.
+// isHotUsageExcessive reports if hot cache exceeded its limit in comparison to main cache.
+// Conversely, it also reports if main cache did NOT exceed its limit in comparison to hot cache.
 // For the special case when both caches are using their exact limits, we report the hot cache
 // is not exceeding its limit, thus slightly favouring hot cache over main cache.
 // One simple way to reason about this function behavior is to think of one cache usage against

@@ -295,10 +295,7 @@ func awaitAddrReady(_ /*t*/ *testing.T, addr string, wg *sync.WaitGroup) {
 			c.Close()
 			return
 		}
-		delay := time.Duration(tries) * 25 * time.Millisecond
-		if delay > maxDelay {
-			delay = maxDelay
-		}
+		delay := min(time.Duration(tries)*25*time.Millisecond, maxDelay)
 		time.Sleep(delay)
 	}
 }

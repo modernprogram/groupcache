@@ -127,7 +127,7 @@ func ExampleUsage() {
     pool := groupcache.NewHTTPPoolOpts("http://192.168.1.1:8080", &groupcache.HTTPPoolOptions{})
 
     // Add more peers to the cluster You MUST Ensure our instance is included in this list else
-    // determining who owns the key accross the cluster will not be consistent, and the pool won't
+    // determining who owns the key across the cluster will not be consistent, and the pool won't
     // be able to determine if our instance owns the key.
     pool.Set("http://192.168.1.1:8080", "http://192.168.1.2:8080", "http://192.168.1.3:8080")
 
