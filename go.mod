@@ -1,8 +1,8 @@
 module github.com/modernprogram/groupcache/v2
 
-go 1.25.9 // weak pointer requires 1.24 or higher
+go 1.25.10 // weak pointer requires 1.24 or higher
 
-toolchain go1.26.2
+toolchain go1.26.3
 
 require (
 	github.com/segmentio/fasthash v1.0.3

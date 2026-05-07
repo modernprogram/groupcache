@@ -184,3 +184,22 @@ func ExampleUsage() {
 ```
 ### Note
 The call to `groupcache.NewHTTPPoolOpts()` is a bit misleading. `NewHTTPPoolOpts()` creates a new pool internally within the `groupcache` package where it is uitilized by any groups created. The `pool` returned is only a pointer to the internallly registered pool so the caller can update the peers in the pool as needed.
+
+# Known groupcache forks
+
+- [google groupcache](https://github.com/golang/groupcache) - The original library by Google. No longer maintained. Does not support TTL. Does not support explicit opaque state.
+- [tailscale/groupcache](https://github.com/tailscale/groupcache) - A fork by Tailscale with minor modifications. Does not support TTL. Does not support explicit opaque state.
+- [mailgun/groupcache](https://github.com/mailgun/groupcache) - A fork by Mailgun. Features TTL and other enhancements. Does not support explicit opaque state.
+- [modernprogram/groupcache](https://github.com/modernprogram/groupcache) - This fork. Evolved from mailgun/groupcache. Features TTL, explicit opaque state (workspace), metric for evictions of non-expired keys on mem full condition, periodic eviction of expired keys, user-supplied per-request context information, and a fix for distributed deadlock.
+- [vimeo/galaxycache](https://github.com/vimeo/galaxycache) - A fork by Vimeo. Heavily modified. Features explicit opaque state, but not TTL.
+- [groupcache v3](https://github.com/groupcache/groupcache-go) - A heavily modified fork of mailgun/groupcache. Features TTL and explicit opaque state.
+
+# Groupcache ecosystem
+
+- [kubegroup](https://github.com/udhos/kubegroup) - Peer autodiscovery for PODs running groupcache in Kubernetes.
+- [ecs-task-discovery](https://github.com/udhos/ecs-task-discovery) - Peer autodiscovery for ECS tasks running groupcache in AWS.
+- [groupcache_oauth2](https://github.com/udhos/groupcache_oauth2) - Implements the oauth2 client_credentials flow caching tokens with groupcache.
+- [groupcache_exporter](https://github.com/udhos/groupcache_exporter) - A Prometheus exporter for groupcache metrics.
+- [groupcache_datadog](https://github.com/udhos/groupcache_datadog) - A Datadog exporter for groupcache metrics.
+- [groupcache_awsemf](https://github.com/udhos/groupcache_awsemf) - Exports groupcache metrics to AWS CloudWatch Logs using Embedded Metric Format.
+- [groupcache_oidcpismo](https://github.com/udhos/groupcache_oidcpismo) - Implements the OIDC Pismo flow caching tokens with groupcache.
