@@ -119,71 +119,78 @@ import (
 
 func ExampleUsage() {
 
-    // NOTE: It is important to pass the same peer `http://192.168.1.1:8080` to `NewHTTPPoolOpts`
-    // which is provided to `pool.Set()` so the pool can identify which of the peers is our instance.
-    // The pool will not operate correctly if it can't identify which peer is our instance.
-    
-    // Pool keeps track of peers in our cluster and identifies which peer owns a key.
-    pool := groupcache.NewHTTPPoolOpts("http://192.168.1.1:8080", &groupcache.HTTPPoolOptions{})
+  // NOTE: It is important to pass the same peer `http://192.168.1.1:8080` to `NewHTTPPoolOptsWithWorkspace`
+  // which is provided to `pool.Set()` so the pool can identify which of the peers is our instance.
+  // The pool will not operate correctly if it can't identify which peer is our instance.
 
-    // Add more peers to the cluster You MUST Ensure our instance is included in this list else
-    // determining who owns the key across the cluster will not be consistent, and the pool won't
-    // be able to determine if our instance owns the key.
-    pool.Set("http://192.168.1.1:8080", "http://192.168.1.2:8080", "http://192.168.1.3:8080")
+  // Pool keeps track of peers in our cluster and identifies which peer owns a key.
+  pool := groupcache.NewHTTPPoolOptsWithWorkspace(groupcache.DefaultWorkspace,
+    "http://192.168.1.1:8080", &groupcache.HTTPPoolOptions{})
 
-    server := http.Server{
-        Addr:    "192.168.1.1:8080",
-        Handler: pool,
+  // Add more peers to the cluster You MUST Ensure our instance is included in this list else
+  // determining who owns the key across the cluster will not be consistent, and the pool won't
+  // be able to determine if our instance owns the key.
+  pool.Set("http://192.168.1.1:8080", "http://192.168.1.2:8080", "http://192.168.1.3:8080")
+
+  server := http.Server{
+    Addr:    "192.168.1.1:8080",
+    Handler: pool,
+  }
+
+  // Start a HTTP server to listen for peer requests from the groupcache
+  go func() {
+    log.Printf("Serving....\n")
+    if err := server.ListenAndServe(); err != nil {
+      log.Fatal(err)
     }
+  }()
+  defer server.Shutdown(context.Background())
 
-    // Start a HTTP server to listen for peer requests from the groupcache
-    go func() {
-        log.Printf("Serving....\n")
-        if err := server.ListenAndServe(); err != nil {
-            log.Fatal(err)
+  // Create a new group cache with a max cache size of 3MB
+  group := groupcache.NewGroupWithWorkspace(groupcache.Options{
+    Workspace:       groupcache.DefaultWorkspace,
+    Name:            "users",
+    PurgeExpired:    true,
+    CacheBytesLimit: 3_000_000,
+    Getter: groupcache.GetterFunc(
+      func(ctx context.Context, key string, dest groupcache.Sink, _ *groupcache.Info) error {
+        // Returns a protobuf struct `User`
+        user, err := fetchUserFromMongo(ctx, key)
+        if err != nil {
+          return err
         }
-    }()
-    defer server.Shutdown(context.Background())
 
-    // Create a new group cache with a max cache size of 3MB
-    group := groupcache.NewGroup("users", 3000000, groupcache.GetterFunc(
-        func(ctx context.Context, id string, dest groupcache.Sink) error {
+        // Set the user in the groupcache to expire after 5 minutes
+        return dest.SetProto(&user, time.Now().Add(time.Minute*5))
+      },
+    ),
+  })
 
-            // Returns a protobuf struct `User`
-            user, err := fetchUserFromMongo(ctx, id)
-            if err != nil {
-                return err
-            }
+  var user User
 
-            // Set the user in the groupcache to expire after 5 minutes
-            return dest.SetProto(&user, time.Now().Add(time.Minute*5))
-        },
-    ))
+  ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*500)
+  defer cancel()
 
-    var user User
+  if err := group.Get(ctx, "12345", groupcache.ProtoSink(&user), nil); err != nil {
+    log.Fatal(err)
+  }
 
-    ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*500)
-    defer cancel()
+  fmt.Printf("-- User --\n")
+  fmt.Printf("Id: %s\n", user.Id)
+  fmt.Printf("Name: %s\n", user.Name)
+  fmt.Printf("Age: %d\n", user.Age)
+  fmt.Printf("IsSuper: %t\n", user.IsSuper)
 
-    if err := group.Get(ctx, "12345", groupcache.ProtoSink(&user)); err != nil {
-        log.Fatal(err)
-    }
-
-    fmt.Printf("-- User --\n")
-    fmt.Printf("Id: %s\n", user.Id)
-    fmt.Printf("Name: %s\n", user.Name)
-    fmt.Printf("Age: %d\n", user.Age)
-    fmt.Printf("IsSuper: %t\n", user.IsSuper)
-
-    // Remove the key from the groupcache
-    if err := group.Remove(ctx, "12345"); err != nil {
-        log.Fatal(err)
-    }
+  // Remove the key from the groupcache
+  if err := group.Remove(ctx, "12345"); err != nil {
+    log.Fatal(err)
+  }
 }
-
 ```
+
 ### Note
-The call to `groupcache.NewHTTPPoolOpts()` is a bit misleading. `NewHTTPPoolOpts()` creates a new pool internally within the `groupcache` package where it is uitilized by any groups created. The `pool` returned is only a pointer to the internallly registered pool so the caller can update the peers in the pool as needed.
+
+The call to `groupcache.NewHTTPPoolOptsWithWorkspace()` is a bit misleading. `NewHTTPPoolOptsWithWorkspace()` creates a new pool internally within the `groupcache` package where it is utilized by any groups created. The `pool` returned is only a pointer to the internallly registered pool so the caller can update the peers in the pool as needed.
 
 # Known groupcache forks
 
@@ -195,6 +202,8 @@ The call to `groupcache.NewHTTPPoolOpts()` is a bit misleading. `NewHTTPPoolOpts
 - [groupcache v3](https://github.com/groupcache/groupcache-go) - A heavily modified fork of mailgun/groupcache. Features TTL and explicit opaque state.
 
 # Groupcache ecosystem
+
+This modernprogram/groupcache fork is compatible with these related projects in the groupcache ecosystem:
 
 - [kubegroup](https://github.com/udhos/kubegroup) - Peer autodiscovery for PODs running groupcache in Kubernetes.
 - [ecs-task-discovery](https://github.com/udhos/ecs-task-discovery) - Peer autodiscovery for ECS tasks running groupcache in AWS.

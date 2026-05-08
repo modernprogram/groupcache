@@ -77,20 +77,23 @@ type HTTPPoolOptions struct {
 	Context func(*http.Request) context.Context
 }
 
-// NewHTTPPoolWithWorkspace initializes an HTTP pool of peers, and registers itself as a PeerPicker.
-// For convenience, it also registers itself as an http.Handler with http.DefaultServeMux.
-// The self argument should be a valid base URL that points to the current server,
-// for example "http://example.net:8000".
+// NewHTTPPoolWithWorkspace initializes an HTTP pool of peers, and registers
+// itself as a PeerPicker. For convenience, it also registers itself as an
+// http.Handler with http.DefaultServeMux. The self argument should be a
+// valid base URL that points to the current server, for example
+// "http://example.net:8000".
 func NewHTTPPoolWithWorkspace(ws *Workspace, self string) *HTTPPool {
 	p := NewHTTPPoolOptsWithWorkspace(ws, self, nil)
 	http.Handle(p.opts.BasePath, p)
 	return p
 }
 
-// NewHTTPPoolOptsWithWorkspace initializes an HTTP pool of peers with the given options.
-// Unlike NewHTTPPoolWithWorkspace, this function does not register the created pool as an HTTP handler.
-// The returned *HTTPPool implements http.Handler and must be registered using http.Handle.
-func NewHTTPPoolOptsWithWorkspace(ws *Workspace, self string, o *HTTPPoolOptions) *HTTPPool {
+// NewHTTPPoolOptsWithWorkspace initializes an HTTP pool of peers with the
+// given options. Unlike NewHTTPPoolWithWorkspace, this function does not
+// register the created pool as an HTTP handler. The returned *HTTPPool
+// implements http.Handler and must be registered using http.Handle.
+func NewHTTPPoolOptsWithWorkspace(ws *Workspace, self string,
+	o *HTTPPoolOptions) *HTTPPool {
 	if ws.httpPoolMade {
 		panic("groupcache: NewHTTPPool must be called only once")
 	}
