@@ -50,8 +50,8 @@ func newTransport() *http.Transport {
 				KeepAlive: 30 * time.Second,
 			}).DialContext(ctx, network, addr)
 		},
-		MaxIdleConns:          600,
-		MaxIdleConnsPerHost:   20,
+		MaxIdleConns:          1000,
+		MaxIdleConnsPerHost:   30,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   5 * time.Second,
 		ResponseHeaderTimeout: 5 * time.Second,
