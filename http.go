@@ -68,7 +68,7 @@ type HTTPPoolOptions struct {
 
 	// Transport optionally specifies an http.RoundTripper for the client
 	// to use when it makes a request.
-	// If nil, the client uses http.DefaultTransport.
+	// If nil, the client uses a default transport.
 	Transport func(context.Context) http.RoundTripper
 
 	// Context optionally specifies a context for the server to use when it
@@ -307,7 +307,7 @@ func (h *httpGetter) makeRequest(ctx context.Context, m string, in request,
 		return err
 	}
 
-	tr := http.DefaultTransport
+	var tr http.RoundTripper = h.ws.defaultTransport
 	if h.getTransport != nil {
 		tr = h.getTransport(ctx)
 	}
