@@ -43,15 +43,15 @@ func newTransport() *http.Transport {
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return (&net.Dialer{
-				Timeout:   10 * time.Second,
+				Timeout:   7 * time.Second,
 				KeepAlive: 30 * time.Second,
 			}).DialContext(ctx, network, addr)
 		},
-		MaxIdleConns:          200,
-		MaxIdleConnsPerHost:   10,
+		MaxIdleConns:          600,
+		MaxIdleConnsPerHost:   20,
 		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 10 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ResponseHeaderTimeout: 5 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 	return t
