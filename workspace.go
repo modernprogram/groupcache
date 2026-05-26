@@ -39,8 +39,11 @@ func NewWorkspace() *Workspace {
 }
 
 func newTransport() *http.Transport {
+	// Intentionally diverges from http.DefaultTransport defaults:
+	// tuned for groupcache peer traffic and explicit HTTP/1 behavior.
 	t := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
+		Proxy:             http.ProxyFromEnvironment,
+		ForceAttemptHTTP2: false,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return (&net.Dialer{
 				Timeout:   7 * time.Second,
