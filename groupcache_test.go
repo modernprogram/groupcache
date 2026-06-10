@@ -727,7 +727,7 @@ func TestHotUsage(t *testing.T) {
 // go test -count 1 -run TestGetGroups ./...
 func TestGetGroups(t *testing.T) {
 
-	ws := NewWorkspace()
+	ws := NewWorkspace(DefaultResponseHeaderTimeout)
 
 	group1 := NewGroupWithWorkspace(Options{
 		Workspace: ws,

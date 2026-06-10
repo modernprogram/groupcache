@@ -302,7 +302,7 @@ func awaitAddrReady(_ /*t*/ *testing.T, addr string, wg *sync.WaitGroup) {
 
 // go test -count 1 -run '^TestGetWithUserinfo$' .
 func TestGetWithUserinfo(t *testing.T) {
-	ws := NewWorkspace()
+	ws := NewWorkspace(DefaultResponseHeaderTimeout)
 
 	addr := "127.0.0.1:8080"
 
