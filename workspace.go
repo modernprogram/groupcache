@@ -76,6 +76,8 @@ func newTransport(responseHeaderTimeout time.Duration) *http.Transport {
 		TLSHandshakeTimeout:   5 * time.Second,
 		ResponseHeaderTimeout: responseHeaderTimeout,
 		ExpectContinueTimeout: 1 * time.Second,
+		WriteBufferSize:       16 * 1024,
+		ReadBufferSize:        16 * 1024,
 	}
 	return t
 }
