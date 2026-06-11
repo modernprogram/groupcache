@@ -96,7 +96,7 @@ type Options struct {
 	// 5) mainWeight=1 and hotWeight=8 => the hot cache limit is 8x the main cache limit.
 	//
 	// If unspecified, HotCacheWeight defaults to 1.
-	// If unspecified, MainCacheWeight defaults to 8.
+	// If unspecified, MainCacheWeight defaults to 1.
 	HotCacheWeight  int64
 	MainCacheWeight int64
 
@@ -139,7 +139,7 @@ type Logger interface {
 func NewGroupWithWorkspace(options Options) *Group {
 
 	if options.MainCacheWeight == 0 {
-		options.MainCacheWeight = 8
+		options.MainCacheWeight = 1
 	}
 
 	if options.HotCacheWeight == 0 {
