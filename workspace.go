@@ -2,7 +2,6 @@ package groupcache
 
 import (
 	"bytes"
-	"context"
 	"net"
 	"net/http"
 	"sync"
@@ -54,22 +53,22 @@ func newTransport(responseHeaderTimeout time.Duration) *http.Transport {
 		responseHeaderTimeout = DefaultResponseHeaderTimeout
 	}
 
+	dialer := net.Dialer{
+		Timeout: 7 * time.Second,
+		KeepAliveConfig: net.KeepAliveConfig{
+			Enable:   true,
+			Idle:     15 * time.Second,
+			Interval: 15 * time.Second,
+			Count:    3,
+		},
+	}
+
 	// Intentionally diverges from http.DefaultTransport defaults:
 	// tuned for groupcache peer traffic and explicit HTTP/1 behavior.
 	t := &http.Transport{
-		Proxy:             http.ProxyFromEnvironment,
-		ForceAttemptHTTP2: false,
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return (&net.Dialer{
-				Timeout: 7 * time.Second,
-				KeepAliveConfig: net.KeepAliveConfig{
-					Enable:   true,
-					Idle:     15 * time.Second,
-					Interval: 15 * time.Second,
-					Count:    3,
-				},
-			}).DialContext(ctx, network, addr)
-		},
+		Proxy:                 http.ProxyFromEnvironment,
+		ForceAttemptHTTP2:     false,
+		DialContext:           dialer.DialContext,
 		MaxIdleConns:          1000,
 		MaxIdleConnsPerHost:   30,
 		IdleConnTimeout:       90 * time.Second,
