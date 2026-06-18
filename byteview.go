@@ -35,6 +35,7 @@ type ByteView struct {
 	b []byte
 	s string
 	e time.Time
+	c int // stat class
 }
 
 // Expire returns the expire time associated with this view.

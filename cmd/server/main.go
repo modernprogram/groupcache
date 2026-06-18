@@ -28,7 +28,7 @@ var group = groupcache.NewGroupWithWorkspace(groupcache.Options{
 	PurgeExpired:    purgeExpired,
 	CacheBytesLimit: 64 << 20,
 	Getter: groupcache.GetterFunc(
-		func(ctx context.Context, key string, dest groupcache.Sink, info *groupcache.Info) error {
+		func(ctx context.Context, key string, dest groupcache.Sink, info *groupcache.Info, _ int) error {
 
 			var ctx1, ctx2 string
 			if info != nil {
@@ -82,7 +82,7 @@ func main() {
 		defer cancel()
 
 		var b []byte
-		err := group.Get(ctx, key, groupcache.AllocatingByteSliceSink(&b), nil)
+		err := group.Get(ctx, key, groupcache.AllocatingByteSliceSink(&b), nil, 0)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -102,7 +102,7 @@ func main() {
 		info := &groupcache.Info{Ctx1: "ctxValue1", Ctx2: "ctxValue2"}
 
 		var b []byte
-		err := group.Get(ctx, key, groupcache.AllocatingByteSliceSink(&b), info)
+		err := group.Get(ctx, key, groupcache.AllocatingByteSliceSink(&b), info, 0)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return

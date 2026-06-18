@@ -25,6 +25,7 @@ message GetRequest {
   required string key = 2; // not actually required/guaranteed to be UTF-8
   required string ctx1 = 3;
   required string ctx2 = 4;
+  required int64 stat_class = 5;
 }
 
 message GetResponse {
@@ -37,6 +38,7 @@ message SetRequest {
   required string key = 2;
   optional bytes value = 3;
   optional int64 expire = 4;
+  required int64 stat_class = 5;
 }
 
 service GroupCache {
