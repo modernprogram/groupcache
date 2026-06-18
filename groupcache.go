@@ -613,7 +613,12 @@ func (g *Group) getLocally(ctx context.Context, key string, dest Sink,
 	if err != nil {
 		return ByteView{}, err
 	}
-	return dest.view()
+	bv, err := dest.view()
+	if err != nil {
+		return ByteView{}, err
+	}
+	bv.c = statClass
+	return bv, nil
 }
 
 func (g *Group) getFromPeer(ctx context.Context, peer ProtoGetter,
@@ -895,6 +900,7 @@ func (c *cache) add(key string, value ByteView) {
 				deltaBytes := int64(len(key.(string))) + int64(val.Len())
 				c.nbytes -= deltaBytes
 				c.class[sc].nbytes -= deltaBytes
+				c.class[sc].nitems--
 				c.class[sc].nevict++
 				if nonExpiredAndMemFull {
 					c.class[sc].nevictNonExpiredOnMemFull++
@@ -906,6 +912,7 @@ func (c *cache) add(key string, value ByteView) {
 	deltaBytes := int64(len(key)) + int64(value.Len())
 	c.nbytes += deltaBytes
 	c.class[value.c].nbytes += deltaBytes
+	c.class[value.c].nitems++
 }
 
 func (c *cache) get(key string, statClass int) (value ByteView, ok bool) {
