@@ -119,12 +119,12 @@ import (
 
 func ExampleUsage() {
 
-  // NOTE: It is important to pass the same peer `http://192.168.1.1:8080` to `NewHTTPPoolOptsWithWorkspace`
+  // NOTE: It is important to pass the same peer `http://192.168.1.1:8080` to `NewHTTPPoolOpts`
   // which is provided to `pool.Set()` so the pool can identify which of the peers is our instance.
   // The pool will not operate correctly if it can't identify which peer is our instance.
 
   // Pool keeps track of peers in our cluster and identifies which peer owns a key.
-  pool := groupcache.NewHTTPPoolOptsWithWorkspace(groupcache.DefaultWorkspace,
+  pool := groupcache.NewHTTPPoolOpts(groupcache.DefaultWorkspace,
     "http://192.168.1.1:8080", &groupcache.HTTPPoolOptions{})
 
   // Add more peers to the cluster You MUST Ensure our instance is included in this list else
@@ -147,7 +147,7 @@ func ExampleUsage() {
   defer server.Shutdown(context.Background())
 
   // Create a new group cache with a max cache size of 3MB
-  group := groupcache.NewGroupWithWorkspace(groupcache.Options{
+  group := groupcache.NewGroup(groupcache.Options{
     Workspace:       groupcache.DefaultWorkspace,
     Name:            "users",
     PurgeExpired:    true,
@@ -190,7 +190,7 @@ func ExampleUsage() {
 
 ### Note
 
-The call to `groupcache.NewHTTPPoolOptsWithWorkspace()` is a bit misleading. `NewHTTPPoolOptsWithWorkspace()` creates a new pool internally within the `groupcache` package where it is utilized by any groups created. The `pool` returned is only a pointer to the internallly registered pool so the caller can update the peers in the pool as needed.
+The call to `groupcache.NewHTTPPoolOpts()` is a bit misleading. `NewHTTPPoolOpts()` creates a new pool internally within the `groupcache` package where it is utilized by any groups created. The `pool` returned is only a pointer to the internallly registered pool so the caller can update the peers in the pool as needed.
 
 # Known groupcache forks
 

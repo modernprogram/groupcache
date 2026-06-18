@@ -61,9 +61,9 @@ func (f GetterFunc) Get(ctx context.Context, key string, dest Sink,
 	return f(ctx, key, dest, info, statClass)
 }
 
-// GetGroupWithWorkspace returns the named group previously created with NewGroup, or
+// GetGroup returns the named group previously created with NewGroup, or
 // nil if there's no such group.
-func GetGroupWithWorkspace(ws *Workspace, name string) *Group {
+func GetGroup(ws *Workspace, name string) *Group {
 	ws.mu.RLock()
 	g := ws.groups[name]
 	ws.mu.RUnlock()
@@ -138,7 +138,7 @@ type Logger interface {
 	Error(msg string, args ...any)
 }
 
-// NewGroupWithWorkspace creates a coordinated group-aware Getter from a Getter.
+// NewGroup creates a coordinated group-aware Getter from a Getter.
 //
 // The returned Getter tries (but does not guarantee) to run only one
 // Get call at once for a given key across an entire set of peer
@@ -147,7 +147,7 @@ type Logger interface {
 // completes.
 //
 // The group name must be unique for each getter.
-func NewGroupWithWorkspace(options Options) *Group {
+func NewGroup(options Options) *Group {
 
 	if options.MainCacheWeight == 0 {
 		options.MainCacheWeight = 1

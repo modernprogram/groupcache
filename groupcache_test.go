@@ -60,7 +60,7 @@ const (
 
 func testSetup() {
 	const purgeExpired = true
-	stringGroup = NewGroupWithWorkspace(Options{
+	stringGroup = NewGroup(Options{
 		Workspace:       DefaultWorkspace,
 		Name:            stringGroupName,
 		PurgeExpired:    purgeExpired,
@@ -75,7 +75,7 @@ func testSetup() {
 		}),
 	})
 
-	protoGroup = NewGroupWithWorkspace(Options{
+	protoGroup = NewGroup(Options{
 		Workspace:       DefaultWorkspace,
 		Name:            protoGroupName,
 		PurgeExpired:    purgeExpired,
@@ -93,7 +93,7 @@ func testSetup() {
 		}),
 	})
 
-	expireGroup = NewGroupWithWorkspace(Options{
+	expireGroup = NewGroup(Options{
 		Workspace:       DefaultWorkspace,
 		Name:            expireGroupName,
 		PurgeExpired:    purgeExpired,
@@ -774,7 +774,7 @@ func TestGetGroups(t *testing.T) {
 
 	ws := NewWorkspace(DefaultResponseHeaderTimeout)
 
-	group1 := NewGroupWithWorkspace(Options{
+	group1 := NewGroup(Options{
 		Workspace: ws,
 		Name:      "cache1",
 		Getter: GetterFunc(
@@ -785,7 +785,7 @@ func TestGetGroups(t *testing.T) {
 		),
 	})
 
-	group2 := NewGroupWithWorkspace(Options{
+	group2 := NewGroup(Options{
 		Workspace: ws,
 		Name:      "cache2",
 		Getter: GetterFunc(

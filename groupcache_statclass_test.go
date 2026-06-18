@@ -17,7 +17,7 @@ func TestStatClassBackwardCompatibility(t *testing.T) {
 	})
 
 	// Create group with default stat classes (1)
-	g := NewGroupWithWorkspace(Options{
+	g := NewGroup(Options{
 		Workspace:       ws,
 		Name:            "backward-compat-group",
 		CacheBytesLimit: 1 << 20,
@@ -56,7 +56,7 @@ func TestStatClassPerClassIsolation(t *testing.T) {
 	})
 
 	// Create group with 3 stat classes
-	g := NewGroupWithWorkspace(Options{
+	g := NewGroup(Options{
 		Workspace:       ws,
 		Name:            "per-class-isolation-group",
 		CacheBytesLimit: 1 << 20,
@@ -115,7 +115,7 @@ func TestStatClassCacheHits(t *testing.T) {
 	})
 
 	// Create group with 2 stat classes
-	g := NewGroupWithWorkspace(Options{
+	g := NewGroup(Options{
 		Workspace:       ws,
 		Name:            "cache-hits-group",
 		CacheBytesLimit: 1 << 20,
@@ -173,7 +173,7 @@ func TestStatClassBytesCounting(t *testing.T) {
 	})
 
 	// Create group with 2 stat classes
-	g := NewGroupWithWorkspace(Options{
+	g := NewGroup(Options{
 		Workspace:       ws,
 		Name:            "bytes-counting-group",
 		CacheBytesLimit: 1 << 20,
@@ -207,7 +207,7 @@ func TestStatClassEvictionsFields(t *testing.T) {
 		return dest.SetString("0123456789", time.Time{})
 	})
 
-	g := NewGroupWithWorkspace(Options{
+	g := NewGroup(Options{
 		Workspace:       ws,
 		Name:            "evictions-fields-group",
 		CacheBytesLimit: 30,
@@ -252,7 +252,7 @@ func TestStatClassOutOfRange(t *testing.T) {
 	})
 
 	// Create group with 2 stat classes
-	g := NewGroupWithWorkspace(Options{
+	g := NewGroup(Options{
 		Workspace:       ws,
 		Name:            "out-of-range-group",
 		CacheBytesLimit: 1 << 20,
@@ -301,7 +301,7 @@ func TestStatClassSumEqualsPrevious(t *testing.T) {
 	})
 
 	// Create single stat class group (old behavior)
-	g1 := NewGroupWithWorkspace(Options{
+	g1 := NewGroup(Options{
 		Workspace:       ws1,
 		Name:            "single-class",
 		CacheBytesLimit: 1 << 20,
@@ -310,7 +310,7 @@ func TestStatClassSumEqualsPrevious(t *testing.T) {
 	})
 
 	// Create multi stat class group (new behavior)
-	g2 := NewGroupWithWorkspace(Options{
+	g2 := NewGroup(Options{
 		Workspace:       ws2,
 		Name:            "multi-class",
 		CacheBytesLimit: 1 << 20,
@@ -382,7 +382,7 @@ func TestStatClassLocalAndPeerValues(t *testing.T) {
 		return dest.SetString("value-"+key, time.Time{})
 	})
 
-	g := NewGroupWithWorkspace(Options{
+	g := NewGroup(Options{
 		Workspace:       ws,
 		Name:            "local-peer-class-group",
 		CacheBytesLimit: 1 << 20,
