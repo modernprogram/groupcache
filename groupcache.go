@@ -408,7 +408,8 @@ func (g *Group) Set(ctx context.Context, key string, value []byte,
 		// If remote peer owns this key
 		owner, ok := g.peers.PickPeer(key)
 		if ok {
-			if err := g.setFromPeer(ctx, owner, key, value, expire); err != nil {
+			if err := g.setFromPeer(ctx, owner, key, value, expire,
+				statClass); err != nil {
 				return nil, err
 			}
 			// TODO(thrawn01): Not sure if this is useful outside of tests...
@@ -659,18 +660,19 @@ func (g *Group) getFromPeer(ctx context.Context, peer ProtoGetter,
 	return value, nil
 }
 
-func (g *Group) setFromPeer(ctx context.Context, peer ProtoGetter, k string, v []byte, e time.Time) error {
+func (g *Group) setFromPeer(ctx context.Context, peer ProtoGetter, k string,
+	v []byte, e time.Time, statClass int) error {
 	var expire int64
 	if !e.IsZero() {
 		expire = e.UnixNano()
 	}
-	statClass := int64(0)
+	sc := int64(statClass)
 	req := &pb.SetRequest{
 		Expire:    &expire,
 		Group:     &g.name,
 		Key:       &k,
 		Value:     v,
-		StatClass: &statClass,
+		StatClass: &sc,
 	}
 	return peer.Set(ctx, req)
 }

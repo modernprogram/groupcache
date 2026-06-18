@@ -277,8 +277,9 @@ func TestCacheEviction(t *testing.T) {
 }
 
 type fakePeer struct {
-	hits int
-	fail bool
+	hits             int
+	fail             bool
+	lastSetStatClass int64
 }
 
 func (p *fakePeer) Get(_ context.Context, in *pb.GetRequest, out *pb.GetResponse) error {
@@ -292,6 +293,7 @@ func (p *fakePeer) Get(_ context.Context, in *pb.GetRequest, out *pb.GetResponse
 
 func (p *fakePeer) Set(_ context.Context, in *pb.SetRequest) error {
 	p.hits++
+	p.lastSetStatClass = in.GetStatClass()
 	if p.fail {
 		return errors.New("simulated error from peer")
 	}
@@ -589,6 +591,36 @@ func TestContextDeadlineOnPeer(t *testing.T) {
 		if err != context.DeadlineExceeded {
 			t.Errorf("expected Get to return context deadline exceeded")
 		}
+	}
+}
+
+func TestSetFromPeerPropagatesStatClass(t *testing.T) {
+	peer := &fakePeer{}
+	peerList := fakePeers([]ProtoGetter{peer})
+
+	const purgeExpired = true
+	const expiredKeysEvictionInterval = time.Minute
+	const peerLatencyWindow = time.Minute
+	const mainCacheWeight = 8
+	const hotCacheWeight = 1
+
+	testGroup := newGroup(DefaultWorkspace, "TestSetFromPeerPropagatesStatClass-group", purgeExpired,
+		1<<20, mainCacheWeight, hotCacheWeight,
+		expiredKeysEvictionInterval, peerLatencyWindow,
+		GetterFunc(func(_ context.Context, key string, dest Sink, info *Info, statClass int) error {
+			return dest.SetString("unused", time.Time{})
+		}), peerList, nil, 3)
+
+	err := testGroup.Set(dummyCtx, "set-key", []byte("value"), time.Time{}, 2, false)
+	if err != nil {
+		t.Fatalf("Set() error = %v", err)
+	}
+
+	if peer.hits != 1 {
+		t.Fatalf("peer hits = %d; want 1", peer.hits)
+	}
+	if peer.lastSetStatClass != 2 {
+		t.Fatalf("peer received stat class %d; want 2", peer.lastSetStatClass)
 	}
 }
 

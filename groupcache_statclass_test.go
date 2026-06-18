@@ -29,7 +29,7 @@ func TestStatClassBackwardCompatibility(t *testing.T) {
 
 	// Get multiple keys with stat class 0 (default)
 	var result string
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		key := "key-" + string(rune('0'+i))
 		err := g.Get(ctx, key, StringSink(&result), nil, 0)
 		assert.NoError(t, err)
@@ -69,21 +69,21 @@ func TestStatClassPerClassIsolation(t *testing.T) {
 
 	// Load keys into different stat classes
 	// Class 0: key-0a, key-0b
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		key := "key-0" + string(rune('a'+i))
 		err := g.Get(ctx, key, StringSink(&result), nil, 0)
 		assert.NoError(t, err)
 	}
 
 	// Class 1: key-1a, key-1b, key-1c
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		key := "key-1" + string(rune('a'+i))
 		err := g.Get(ctx, key, StringSink(&result), nil, 1)
 		assert.NoError(t, err)
 	}
 
 	// Class 2: key-2a
-	for i := 0; i < 1; i++ {
+	for i := range 1 {
 		key := "key-2" + string(rune('a'+i))
 		err := g.Get(ctx, key, StringSink(&result), nil, 2)
 		assert.NoError(t, err)
@@ -219,7 +219,7 @@ func TestStatClassEvictionsFields(t *testing.T) {
 	var result string
 
 	// Fill cache with class 1 entries so evictions happen under memory pressure.
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		key := "k" + string(rune('0'+i))
 		err := g.Get(ctx, key, StringSink(&result), nil, 1)
 		assert.NoError(t, err)
