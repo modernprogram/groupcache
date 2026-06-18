@@ -199,6 +199,51 @@ func TestStatClassBytesCounting(t *testing.T) {
 	assert.Greater(t, class1Bytes, class0Bytes, "class 1 should have more bytes due to larger value")
 }
 
+// TestStatClassEvictionsFields verifies eviction-related fields are tracked per stat class.
+func TestStatClassEvictionsFields(t *testing.T) {
+	ws := NewWorkspace(DefaultResponseHeaderTimeout)
+	getter := GetterFunc(func(ctx context.Context, key string, dest Sink, info *Info, statClass int) error {
+		// Keep value size fixed to make memory pressure deterministic.
+		return dest.SetString("0123456789", time.Time{})
+	})
+
+	g := NewGroupWithWorkspace(Options{
+		Workspace:       ws,
+		Name:            "evictions-fields-group",
+		CacheBytesLimit: 30,
+		Getter:          getter,
+		StatClasses:     2,
+	})
+
+	ctx := context.Background()
+	var result string
+
+	// Fill cache with class 1 entries so evictions happen under memory pressure.
+	for i := 0; i < 6; i++ {
+		key := "k" + string(rune('0'+i))
+		err := g.Get(ctx, key, StringSink(&result), nil, 1)
+		assert.NoError(t, err)
+	}
+
+	mainStats := g.CacheStats(MainCache)
+	hotStats := g.CacheStats(HotCache)
+
+	class0Evictions := mainStats[0].Evictions + hotStats[0].Evictions
+	class0MemFullEvictions := mainStats[0].EvictionsNonExpiredOnMemFull + hotStats[0].EvictionsNonExpiredOnMemFull
+	class1Evictions := mainStats[1].Evictions + hotStats[1].Evictions
+	class1MemFullEvictions := mainStats[1].EvictionsNonExpiredOnMemFull + hotStats[1].EvictionsNonExpiredOnMemFull
+
+	// We only inserted class 1 entries, so class 0 eviction counters should remain zero.
+	assert.Equal(t, int64(0), class0Evictions, "class 0 should have no evictions")
+	assert.Equal(t, int64(0), class0MemFullEvictions, "class 0 should have no mem-full evictions")
+
+	// Memory pressure should trigger removeOldest on non-expired keys.
+	assert.Greater(t, class1Evictions, int64(0), "class 1 should have evictions")
+	assert.Greater(t, class1MemFullEvictions, int64(0), "class 1 should have non-expired mem-full evictions")
+	assert.GreaterOrEqual(t, class1Evictions, class1MemFullEvictions,
+		"mem-full non-expired evictions cannot exceed total evictions")
+}
+
 // TestStatClassOutOfRange verifies that out-of-range stat classes fallback to class 0.
 func TestStatClassOutOfRange(t *testing.T) {
 	ws := NewWorkspace(DefaultResponseHeaderTimeout)
