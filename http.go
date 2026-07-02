@@ -77,22 +77,22 @@ type HTTPPoolOptions struct {
 	Context func(*http.Request) context.Context
 }
 
-// NewHTTPPoolWithWorkspace initializes an HTTP pool of peers, and registers
+// NewHTTPPool initializes an HTTP pool of peers, and registers
 // itself as a PeerPicker. For convenience, it also registers itself as an
 // http.Handler with http.DefaultServeMux. The self argument should be a
 // valid base URL that points to the current server, for example
 // "http://example.net:8000".
-func NewHTTPPoolWithWorkspace(ws *Workspace, self string) *HTTPPool {
-	p := NewHTTPPoolOptsWithWorkspace(ws, self, nil)
+func NewHTTPPool(ws *Workspace, self string) *HTTPPool {
+	p := NewHTTPPoolOpts(ws, self, nil)
 	http.Handle(p.opts.BasePath, p)
 	return p
 }
 
-// NewHTTPPoolOptsWithWorkspace initializes an HTTP pool of peers with the
-// given options. Unlike NewHTTPPoolWithWorkspace, this function does not
+// NewHTTPPoolOpts initializes an HTTP pool of peers with the
+// given options. Unlike NewHTTPPool, this function does not
 // register the created pool as an HTTP handler. The returned *HTTPPool
 // implements http.Handler and must be registered using http.Handle.
-func NewHTTPPoolOptsWithWorkspace(ws *Workspace, self string,
+func NewHTTPPoolOpts(ws *Workspace, self string,
 	o *HTTPPoolOptions) *HTTPPool {
 	if ws.httpPoolMade {
 		panic("groupcache: NewHTTPPool must be called only once")
@@ -115,7 +115,7 @@ func NewHTTPPoolOptsWithWorkspace(ws *Workspace, self string,
 	}
 	p.peers = consistenthash.New(p.opts.Replicas, p.opts.HashFn)
 
-	RegisterPeerPickerWithWorkspace(ws, func() PeerPicker { return p })
+	RegisterPeerPicker(ws, func() PeerPicker { return p })
 	return p
 }
 
@@ -177,7 +177,7 @@ func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	key := parts[1]
 
 	// Fetch the value for this group/key.
-	group := GetGroupWithWorkspace(p.ws, groupName)
+	group := GetGroup(p.ws, groupName)
 	if group == nil {
 		http.Error(w, "no such group: "+groupName, http.StatusNotFound)
 		return

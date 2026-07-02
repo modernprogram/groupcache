@@ -50,9 +50,9 @@ type NoPeers struct{}
 func (NoPeers) PickPeer(key string) (peer ProtoGetter, ok bool) { return }
 func (NoPeers) GetAll() []ProtoGetter                           { return []ProtoGetter{} }
 
-// RegisterPeerPickerWithWorkspace registers the peer initialization function.
+// RegisterPeerPicker registers the peer initialization function.
 // It is called once, when the first group is created.
-func RegisterPeerPickerWithWorkspace(ws *Workspace, fn func() PeerPicker) {
+func RegisterPeerPicker(ws *Workspace, fn func() PeerPicker) {
 	if ws.portPicker != nil {
 		panic("RegisterPeerPicker called more than once")
 	}

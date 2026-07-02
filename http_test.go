@@ -97,7 +97,7 @@ func TestHTTPPool(t *testing.T) {
 	wg.Wait()
 
 	// Use a dummy self address so that we don't handle gets in-process.
-	p := NewHTTPPoolWithWorkspace(DefaultWorkspace, "should-be-ignored")
+	p := NewHTTPPool(DefaultWorkspace, "should-be-ignored")
 	p.Set(addrToURL(childAddr)...)
 
 	// Dummy getter function. Gets should go to children only.
@@ -111,7 +111,7 @@ func TestHTTPPool(t *testing.T) {
 	defer cancel()
 
 	const purgeExpired = true
-	g := NewGroupWithWorkspace(Options{
+	g := NewGroup(Options{
 		Workspace:       DefaultWorkspace,
 		Name:            "httpPoolTest",
 		PurgeExpired:    purgeExpired,
@@ -228,7 +228,7 @@ func testKeys(n int) (keys []string) {
 func beChildForTestHTTPPool(t *testing.T) {
 	addrs := strings.Split(*peerAddrs, ",")
 
-	p := NewHTTPPoolWithWorkspace(DefaultWorkspace, "http://"+addrs[*peerIndex])
+	p := NewHTTPPool(DefaultWorkspace, "http://"+addrs[*peerIndex])
 	p.Set(addrToURL(addrs)...)
 
 	getter := GetterFunc(func(ctx context.Context, key string, dest Sink, info *Info) error {
@@ -252,7 +252,7 @@ func beChildForTestHTTPPool(t *testing.T) {
 		return nil
 	})
 	const purgeExpired = true
-	NewGroupWithWorkspace(Options{
+	NewGroup(Options{
 		Workspace:       DefaultWorkspace,
 		Name:            "httpPoolTest",
 		PurgeExpired:    purgeExpired,
@@ -308,7 +308,7 @@ func TestGetWithUserinfo(t *testing.T) {
 
 	self := "http://" + addr
 
-	pool := NewHTTPPoolOptsWithWorkspace(ws, self, nil)
+	pool := NewHTTPPoolOpts(ws, self, nil)
 	pool.Set(self)
 
 	//mux := http.NewServeMux()
@@ -341,7 +341,7 @@ func TestGetWithUserinfo(t *testing.T) {
 
 	var foundCtx1, foundCtx2 string
 
-	group := NewGroupWithWorkspace(Options{
+	group := NewGroup(Options{
 		Workspace:       ws,
 		Name:            groupName,
 		CacheBytesLimit: 1_000_000,

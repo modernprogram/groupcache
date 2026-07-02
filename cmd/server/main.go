@@ -22,7 +22,7 @@ const purgeExpired = true
 const ttl = 10 * time.Second
 const expiredKeysEvictionInterval = 20 * time.Second
 
-var group = groupcache.NewGroupWithWorkspace(groupcache.Options{
+var group = groupcache.NewGroup(groupcache.Options{
 	Workspace:       groupcache.DefaultWorkspace,
 	Name:            "cache1",
 	PurgeExpired:    purgeExpired,
@@ -61,7 +61,7 @@ func main() {
 	flag.Parse()
 
 	p := strings.Split(*peers, ",")
-	pool := groupcache.NewHTTPPoolOptsWithWorkspace(groupcache.DefaultWorkspace, *serverURL,
+	pool := groupcache.NewHTTPPoolOpts(groupcache.DefaultWorkspace, *serverURL,
 		&groupcache.HTTPPoolOptions{})
 	pool.Set(p...)
 

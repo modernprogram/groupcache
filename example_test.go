@@ -34,7 +34,7 @@ func Example() {
 
 	// Create a new group cache with a max cache size of 3MB
 	const purgeExpired = true
-	group := groupcache.NewGroupWithWorkspace(groupcache.Options{
+	group := groupcache.NewGroup(groupcache.Options{
 		Workspace:       groupcache.DefaultWorkspace,
 		Name:            "users",
 		PurgeExpired:    purgeExpired,
