@@ -65,7 +65,8 @@ func testSetup() {
 		Name:            stringGroupName,
 		PurgeExpired:    purgeExpired,
 		CacheBytesLimit: cacheSize,
-		Getter: GetterFunc(func(_ context.Context, key string, dest Sink, info *Info) error {
+		Getter: GetterFunc(func(_ context.Context, key string, dest Sink,
+			info *Info, statClass int) error {
 			if key == fromChan {
 				key = <-stringc
 			}
@@ -79,7 +80,8 @@ func testSetup() {
 		Name:            protoGroupName,
 		PurgeExpired:    purgeExpired,
 		CacheBytesLimit: cacheSize,
-		Getter: GetterFunc(func(_ context.Context, key string, dest Sink, info *Info) error {
+		Getter: GetterFunc(func(_ context.Context, key string, dest Sink,
+			info *Info, statClass int) error {
 			if key == fromChan {
 				key = <-stringc
 			}
@@ -96,7 +98,8 @@ func testSetup() {
 		Name:            expireGroupName,
 		PurgeExpired:    purgeExpired,
 		CacheBytesLimit: cacheSize,
-		Getter: GetterFunc(func(_ context.Context, key string, dest Sink, info *Info) error {
+		Getter: GetterFunc(func(_ context.Context, key string, dest Sink,
+			info *Info, statCalss int) error {
 			cacheFills.Add(1)
 			return dest.SetString("ECHO:"+key, time.Now().Add(time.Millisecond*100))
 		}),
@@ -114,7 +117,8 @@ func TestGetDupSuppressString(t *testing.T) {
 	for range 2 {
 		go func() {
 			var s string
-			if err := stringGroup.Get(dummyCtx, fromChan, StringSink(&s), nil); err != nil {
+			if err := stringGroup.Get(dummyCtx, fromChan, StringSink(&s), nil,
+				0); err != nil {
 				resc <- "ERROR:" + err.Error()
 				return
 			}
@@ -156,7 +160,8 @@ func TestGetDupSuppressProto(t *testing.T) {
 	for range 2 {
 		go func() {
 			tm := new(testpb.TestMessage)
-			if err := protoGroup.Get(dummyCtx, fromChan, ProtoSink(tm), nil); err != nil {
+			if err := protoGroup.Get(dummyCtx, fromChan, ProtoSink(tm), nil,
+				0); err != nil {
 				tm.Name = proto.String("ERROR:" + err.Error())
 			}
 			resc <- tm
@@ -200,7 +205,8 @@ func TestCaching(t *testing.T) {
 	fills := countFills(func() {
 		for range 10 {
 			var s string
-			if err := stringGroup.Get(dummyCtx, "TestCaching-key", StringSink(&s), nil); err != nil {
+			if err := stringGroup.Get(dummyCtx, "TestCaching-key",
+				StringSink(&s), nil, 0); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -215,7 +221,8 @@ func TestCachingExpire(t *testing.T) {
 	fills := countFills(func() {
 		for i := range 3 {
 			var s string
-			if err := expireGroup.Get(dummyCtx, "TestCachingExpire-key", StringSink(&s), nil); err != nil {
+			if err := expireGroup.Get(dummyCtx, "TestCachingExpire-key",
+				StringSink(&s), nil, 0); err != nil {
 				t.Fatal(err)
 			}
 			if i == 1 {
@@ -234,7 +241,8 @@ func TestCacheEviction(t *testing.T) {
 	getTestKey := func() {
 		var res string
 		for range 10 {
-			if err := stringGroup.Get(dummyCtx, testKey, StringSink(&res), nil); err != nil {
+			if err := stringGroup.Get(dummyCtx, testKey, StringSink(&res),
+				nil, 0); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -245,7 +253,7 @@ func TestCacheEviction(t *testing.T) {
 	}
 
 	g := stringGroup.(*Group)
-	evict0 := g.mainCache.nevict
+	evict0 := g.mainCache.getEvictions()
 
 	// Trash the cache with other keys.
 	var bytesFlooded int64
@@ -253,10 +261,10 @@ func TestCacheEviction(t *testing.T) {
 	for bytesFlooded < cacheSize+1024 {
 		var res string
 		key := fmt.Sprintf("dummy-key-%d", bytesFlooded)
-		stringGroup.Get(dummyCtx, key, StringSink(&res), nil)
+		stringGroup.Get(dummyCtx, key, StringSink(&res), nil, 0)
 		bytesFlooded += int64(len(key) + len(res))
 	}
-	evicts := g.mainCache.nevict - evict0
+	evicts := g.mainCache.getEvictions() - evict0
 	if evicts <= 0 {
 		t.Errorf("evicts = %v; want more than 0", evicts)
 	}
@@ -269,8 +277,9 @@ func TestCacheEviction(t *testing.T) {
 }
 
 type fakePeer struct {
-	hits int
-	fail bool
+	hits             int
+	fail             bool
+	lastSetStatClass int64
 }
 
 func (p *fakePeer) Get(_ context.Context, in *pb.GetRequest, out *pb.GetResponse) error {
@@ -284,6 +293,7 @@ func (p *fakePeer) Get(_ context.Context, in *pb.GetRequest, out *pb.GetResponse
 
 func (p *fakePeer) Set(_ context.Context, in *pb.SetRequest) error {
 	p.hits++
+	p.lastSetStatClass = in.GetStatClass()
 	if p.fail {
 		return errors.New("simulated error from peer")
 	}
@@ -325,7 +335,7 @@ func TestPeers(t *testing.T) {
 	peerList := fakePeers([]ProtoGetter{peer0, peer1, peer2, nil})
 	const cacheSize = 0 // disabled
 	localHits := 0
-	getter := func(_ context.Context, key string, dest Sink, info *Info) error {
+	getter := func(_ context.Context, key string, dest Sink, info *Info, statClass int) error {
 		localHits++
 		return dest.SetString("got:"+key, time.Time{})
 	}
@@ -337,7 +347,7 @@ func TestPeers(t *testing.T) {
 	testGroup := newGroup(DefaultWorkspace, "TestPeers-group", purgeExpired,
 		cacheSize, mainCacheWeight, hotCacheWeight,
 		expiredKeysEvictionInterval, peerLatencyWindow,
-		GetterFunc(getter), peerList, nil)
+		GetterFunc(getter), peerList, nil, 0)
 	run := func(name string, n int, wantSummary string) {
 		// Reset counters
 		localHits = 0
@@ -349,7 +359,7 @@ func TestPeers(t *testing.T) {
 			key := fmt.Sprintf("key-%d", i)
 			want := "got:" + key
 			var got string
-			err := testGroup.Get(dummyCtx, key, StringSink(&got), nil)
+			err := testGroup.Get(dummyCtx, key, StringSink(&got), nil, 0)
 			if err != nil {
 				t.Errorf("%s: error on key %q: %v", name, key, err)
 				continue
@@ -368,8 +378,8 @@ func TestPeers(t *testing.T) {
 	resetCacheSize := func(maxBytes int64) {
 		g := testGroup
 		g.cacheBytesLimit = maxBytes
-		g.mainCache = cache{}
-		g.hotCache = cache{}
+		g.mainCache = newCache(1)
+		g.hotCache = newCache(1)
 	}
 
 	// Base case; peers all up, with no problems.
@@ -398,7 +408,8 @@ func TestPeers(t *testing.T) {
 func TestTruncatingByteSliceTarget(t *testing.T) {
 	var buf [100]byte
 	s := buf[:]
-	if err := stringGroup.Get(dummyCtx, "short", TruncatingByteSliceSink(&s), nil); err != nil {
+	if err := stringGroup.Get(dummyCtx, "short", TruncatingByteSliceSink(&s),
+		nil, 0); err != nil {
 		t.Fatal(err)
 	}
 	if want := "ECHO:short"; string(s) != want {
@@ -406,7 +417,8 @@ func TestTruncatingByteSliceTarget(t *testing.T) {
 	}
 
 	s = buf[:6]
-	if err := stringGroup.Get(dummyCtx, "truncated", TruncatingByteSliceSink(&s), nil); err != nil {
+	if err := stringGroup.Get(dummyCtx, "truncated", TruncatingByteSliceSink(&s),
+		nil, 0); err != nil {
 		t.Fatal(err)
 	}
 	if want := "ECHO:t"; string(s) != want {
@@ -474,9 +486,9 @@ func TestNoDedup(t *testing.T) {
 		mainCacheWeight, hotCacheWeight, expiredKeysEvictionInterval,
 		peerLatencyWindow,
 		GetterFunc(func(_ context.Context,
-			key string, dest Sink, info *Info) error {
+			key string, dest Sink, info *Info, statClass int) error {
 			return dest.SetString(testval, time.Time{})
-		}), nil, nil)
+		}), nil, nil, 0)
 
 	orderedGroup := &orderedFlightGroup{
 		stage1: make(chan bool),
@@ -495,7 +507,8 @@ func TestNoDedup(t *testing.T) {
 	for range 2 {
 		go func() {
 			var s string
-			if err := g.Get(dummyCtx, testkey, StringSink(&s), nil); err != nil {
+			if err := g.Get(dummyCtx, testkey, StringSink(&s), nil,
+				0); err != nil {
 				resc <- "ERROR:" + err.Error()
 				return
 			}
@@ -555,7 +568,8 @@ func TestContextDeadlineOnPeer(t *testing.T) {
 	peer1 := &slowPeer{}
 	peer2 := &slowPeer{}
 	peerList := fakePeers([]ProtoGetter{peer0, peer1, peer2, nil})
-	getter := func(_ context.Context, key string, dest Sink, info *Info) error {
+	getter := func(_ context.Context, key string, dest Sink, info *Info,
+		statClass int) error {
 		return dest.SetString("got:"+key, time.Time{})
 	}
 	const purgeExpired = true
@@ -566,13 +580,13 @@ func TestContextDeadlineOnPeer(t *testing.T) {
 	testGroup := newGroup(DefaultWorkspace, "TestContextDeadlineOnPeer-group",
 		purgeExpired, cacheSize, mainCacheWeight, hotCacheWeight,
 		expiredKeysEvictionInterval, peerLatencyWindow,
-		GetterFunc(getter), peerList, nil)
+		GetterFunc(getter), peerList, nil, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*300)
 	defer cancel()
 
 	var got string
-	err := testGroup.Get(ctx, "test-key", StringSink(&got), nil)
+	err := testGroup.Get(ctx, "test-key", StringSink(&got), nil, 0)
 	if err != nil {
 		if err != context.DeadlineExceeded {
 			t.Errorf("expected Get to return context deadline exceeded")
@@ -580,13 +594,43 @@ func TestContextDeadlineOnPeer(t *testing.T) {
 	}
 }
 
+func TestSetFromPeerPropagatesStatClass(t *testing.T) {
+	peer := &fakePeer{}
+	peerList := fakePeers([]ProtoGetter{peer})
+
+	const purgeExpired = true
+	const expiredKeysEvictionInterval = time.Minute
+	const peerLatencyWindow = time.Minute
+	const mainCacheWeight = 8
+	const hotCacheWeight = 1
+
+	testGroup := newGroup(DefaultWorkspace, "TestSetFromPeerPropagatesStatClass-group", purgeExpired,
+		1<<20, mainCacheWeight, hotCacheWeight,
+		expiredKeysEvictionInterval, peerLatencyWindow,
+		GetterFunc(func(_ context.Context, key string, dest Sink, info *Info, statClass int) error {
+			return dest.SetString("unused", time.Time{})
+		}), peerList, nil, 3)
+
+	err := testGroup.Set(dummyCtx, "set-key", []byte("value"), time.Time{}, 2, false)
+	if err != nil {
+		t.Fatalf("Set() error = %v", err)
+	}
+
+	if peer.hits != 1 {
+		t.Fatalf("peer hits = %d; want 1", peer.hits)
+	}
+	if peer.lastSetStatClass != 2 {
+		t.Fatalf("peer received stat class %d; want 2", peer.lastSetStatClass)
+	}
+}
+
 func TestEnsureSizeReportedCorrectly(t *testing.T) {
-	c := &cache{}
+	c := newCache(1)
 
 	// Add the first value
 	bv1 := ByteView{s: "first", e: time.Now().Add(100 * time.Second)}
 	c.add("key1", bv1)
-	v, ok := c.get("key1")
+	v, ok := c.get("key1", 0)
 
 	// Should be len("key1" + "first") == 9
 	assert.True(t, ok)
@@ -597,7 +641,7 @@ func TestEnsureSizeReportedCorrectly(t *testing.T) {
 	bv2 := ByteView{s: "second", e: time.Now().Add(200 * time.Second)}
 
 	c.add("key2", bv2)
-	v, ok = c.get("key2")
+	v, ok = c.get("key2", 0)
 
 	// Should be len("key2" + "second") == (10 + 9) == 19
 	assert.True(t, ok)
@@ -608,7 +652,7 @@ func TestEnsureSizeReportedCorrectly(t *testing.T) {
 	bv3 := ByteView{s: "3", e: time.Now().Add(200 * time.Second)}
 
 	c.add("key1", bv3)
-	v, ok = c.get("key1")
+	v, ok = c.get("key1", 0)
 
 	// len("key1" + "3") == 5
 	// len("key2" + "second") == 10
@@ -617,10 +661,11 @@ func TestEnsureSizeReportedCorrectly(t *testing.T) {
 	assert.Equal(t, int64(15), c.bytes())
 
 	// Replace the second value with a longer value
-	bv4 := ByteView{s: "this-string-is-28-chars-long", e: time.Now().Add(200 * time.Second)}
+	bv4 := ByteView{s: "this-string-is-28-chars-long",
+		e: time.Now().Add(200 * time.Second)}
 
 	c.add("key2", bv4)
-	v, ok = c.get("key2")
+	v, ok = c.get("key2", 0)
 
 	// len("key1" + "3") == 5
 	// len("key2" + "this-string-is-28-chars-long") == 32
@@ -630,7 +675,7 @@ func TestEnsureSizeReportedCorrectly(t *testing.T) {
 }
 
 func TestEnsureUpdateExpiredValue(t *testing.T) {
-	c := &cache{}
+	c := newCache(1)
 	curTime := time.Now()
 
 	// Override the now function so we control time
@@ -640,31 +685,31 @@ func TestEnsureUpdateExpiredValue(t *testing.T) {
 
 	// Expires in 1 second
 	c.add("key1", ByteView{s: "value1", e: curTime.Add(time.Second)})
-	_, ok := c.get("key1")
+	_, ok := c.get("key1", 0)
 	assert.True(t, ok)
 
 	// Advance 1.1 seconds into the future
 	curTime = curTime.Add(time.Millisecond * 1100)
 
 	// Value should have expired
-	_, ok = c.get("key1")
+	_, ok = c.get("key1", 0)
 	assert.False(t, ok)
 
 	// Add a new key that expires in 1 second
 	c.add("key2", ByteView{s: "value2", e: curTime.Add(time.Second)})
-	_, ok = c.get("key2")
+	_, ok = c.get("key2", 0)
 	assert.True(t, ok)
 
 	// Advance 0.5 seconds into the future
 	curTime = curTime.Add(time.Millisecond * 500)
 
 	// Value should still exist
-	_, ok = c.get("key2")
+	_, ok = c.get("key2", 0)
 	assert.True(t, ok)
 
 	// Replace the existing key, this should update the expired time
 	c.add("key2", ByteView{s: "updated value2", e: curTime.Add(time.Second)})
-	_, ok = c.get("key2")
+	_, ok = c.get("key2", 0)
 	assert.True(t, ok)
 
 	// Advance 0.6 seconds into the future, which puts us past the initial
@@ -672,14 +717,14 @@ func TestEnsureUpdateExpiredValue(t *testing.T) {
 	curTime = curTime.Add(time.Millisecond * 600)
 
 	// Should still exist
-	_, ok = c.get("key2")
+	_, ok = c.get("key2", 0)
 	assert.True(t, ok)
 
 	// Advance 1.1 seconds into the future
 	curTime = curTime.Add(time.Millisecond * 1100)
 
 	// Should not exist
-	_, ok = c.get("key2")
+	_, ok = c.get("key2", 0)
 	assert.False(t, ok)
 }
 
@@ -733,7 +778,8 @@ func TestGetGroups(t *testing.T) {
 		Workspace: ws,
 		Name:      "cache1",
 		Getter: GetterFunc(
-			func(ctx context.Context, key string, dest Sink, info *Info) error {
+			func(ctx context.Context, key string, dest Sink, info *Info,
+				statClass int) error {
 				return nil
 			},
 		),
@@ -743,7 +789,8 @@ func TestGetGroups(t *testing.T) {
 		Workspace: ws,
 		Name:      "cache2",
 		Getter: GetterFunc(
-			func(ctx context.Context, key string, dest Sink, info *Info) error {
+			func(ctx context.Context, key string, dest Sink, info *Info,
+				statClass int) error {
 				return nil
 			},
 		),

@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -168,13 +169,20 @@ func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(r.URL.Path, p.opts.BasePath) {
 		panic("HTTPPool serving unexpected path: " + r.URL.Path)
 	}
-	parts := strings.SplitN(r.URL.Path[len(p.opts.BasePath):], "/", 2)
-	if len(parts) != 2 {
+	parts := strings.SplitN(r.URL.Path[len(p.opts.BasePath):], "/", 3)
+	if len(parts) != 3 {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 	groupName := parts[0]
-	key := parts[1]
+	statClassStr := parts[1]
+	key := parts[2]
+
+	statClass, err := strconv.Atoi(statClassStr)
+	if err != nil {
+		http.Error(w, "invalid stat class", http.StatusBadRequest)
+		return
+	}
 
 	// Fetch the value for this group/key.
 	group := GetGroup(p.ws, groupName)
@@ -218,10 +226,12 @@ func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		var expire time.Time
 		if out.Expire != nil && *out.Expire != 0 {
-			expire = time.Unix(*out.Expire/int64(time.Second), *out.Expire%int64(time.Second))
+			expire = time.Unix(*out.Expire/int64(time.Second),
+				*out.Expire%int64(time.Second))
 		}
 
-		group.localSet(*out.Key, out.Value, expire, &group.mainCache)
+		group.localSet(*out.Key, out.Value, expire, statClass,
+			&group.mainCache)
 		return
 	}
 
@@ -249,8 +259,7 @@ func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var b []byte
 
 	value := AllocatingByteSliceSink(&b)
-	err := group.GetForPeer(ctx, key, value, userinfo)
-	if err != nil {
+	if err := group.GetForPeer(ctx, key, value, userinfo, statClass); err != nil {
 		if errors.Is(err, &ErrNotFound{}) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -292,14 +301,16 @@ func (h *httpGetter) GetURL() string {
 type request interface {
 	GetGroup() string
 	GetKey() string
+	GetStatClass() int64
 }
 
 func (h *httpGetter) makeRequest(ctx context.Context, m string, in request,
 	b io.Reader, out *http.Response) error {
 	u := fmt.Sprintf(
-		"%v%v/%v",
+		"%v%v/%d/%v",
 		h.baseURL,
 		url.PathEscape(in.GetGroup()),
+		in.GetStatClass(),
 		url.PathEscape(in.GetKey()),
 	)
 	req, err := http.NewRequestWithContext(ctx, m, u, b)
@@ -372,7 +383,8 @@ func (h *httpGetter) Set(ctx context.Context, in *pb.SetRequest) error {
 		return fmt.Errorf("while marshaling SetRequest body: %w", err)
 	}
 	var res http.Response
-	if err := h.makeRequest(ctx, http.MethodPut, in, bytes.NewReader(body), &res); err != nil {
+	if err := h.makeRequest(ctx, http.MethodPut, in, bytes.NewReader(body),
+		&res); err != nil {
 		return err
 	}
 	defer res.Body.Close()

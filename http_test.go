@@ -103,7 +103,8 @@ func TestHTTPPool(t *testing.T) {
 	// Dummy getter function. Gets should go to children only.
 	// The only time this process will handle a get is when the
 	// children can't be contacted for some reason.
-	getter := GetterFunc(func(ctx context.Context, key string, dest Sink, info *Info) error {
+	getter := GetterFunc(func(ctx context.Context, key string, dest Sink,
+		info *Info, statClass int) error {
 		return errors.New("parent getter called; something's wrong")
 	})
 
@@ -121,7 +122,7 @@ func TestHTTPPool(t *testing.T) {
 
 	for _, key := range testKeys(nGets) {
 		var value string
-		if err := g.Get(ctx, key, StringSink(&value), nil); err != nil {
+		if err := g.Get(ctx, key, StringSink(&value), nil, 0); err != nil {
 			t.Fatal(err)
 		}
 		if suffix := ":" + key; !strings.HasSuffix(value, suffix) {
@@ -140,7 +141,7 @@ func TestHTTPPool(t *testing.T) {
 
 	// Multiple gets on the same key
 	for range 2 {
-		if err := g.Get(ctx, key, StringSink(&value), nil); err != nil {
+		if err := g.Get(ctx, key, StringSink(&value), nil, 0); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -156,7 +157,7 @@ func TestHTTPPool(t *testing.T) {
 	}
 
 	// Get the key again
-	if err := g.Get(ctx, key, StringSink(&value), nil); err != nil {
+	if err := g.Get(ctx, key, StringSink(&value), nil, 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -168,13 +169,13 @@ func TestHTTPPool(t *testing.T) {
 	key = "setMyTestKey"
 	setValue := []byte("test set")
 	// Add the key to the cache, optionally updating our local hot cache
-	if err := g.Set(ctx, key, setValue, time.Time{}, false); err != nil {
+	if err := g.Set(ctx, key, setValue, time.Time{}, 0, false); err != nil {
 		t.Fatal(err)
 	}
 
 	// Get the key
 	var getValue ByteView
-	if err := g.Get(ctx, key, ByteViewSink(&getValue), nil); err != nil {
+	if err := g.Get(ctx, key, ByteViewSink(&getValue), nil, 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -188,7 +189,7 @@ func TestHTTPPool(t *testing.T) {
 
 	// Key with non-URL characters to test URL encoding roundtrip
 	key = "a b/c,d"
-	if err := g.Get(ctx, key, StringSink(&value), nil); err != nil {
+	if err := g.Get(ctx, key, StringSink(&value), nil, 0); err != nil {
 		t.Fatal(err)
 	}
 	if suffix := ":" + key; !strings.HasSuffix(value, suffix) {
@@ -196,7 +197,7 @@ func TestHTTPPool(t *testing.T) {
 	}
 
 	// Get a key that does not exist
-	err := g.Get(ctx, "IReturnErrNotFound", StringSink(&value), nil)
+	err := g.Get(ctx, "IReturnErrNotFound", StringSink(&value), nil, 0)
 	errNotFound := &ErrNotFound{}
 	if !errors.As(err, &errNotFound) {
 		t.Fatal(errors.New("expected error to be 'ErrNotFound'"))
@@ -204,7 +205,7 @@ func TestHTTPPool(t *testing.T) {
 	assert.Equal(t, "I am a ErrNotFound error", errNotFound.Error())
 
 	// Get a key that is guaranteed to return a remote error.
-	err = g.Get(ctx, "IReturnErrRemoteCall", StringSink(&value), nil)
+	err = g.Get(ctx, "IReturnErrRemoteCall", StringSink(&value), nil, 0)
 	errRemoteCall := &ErrRemoteCall{}
 	if !errors.As(err, &errRemoteCall) {
 		t.Fatal(errors.New("expected error to be 'ErrRemoteCall'"))
@@ -212,7 +213,7 @@ func TestHTTPPool(t *testing.T) {
 	assert.Equal(t, "I am a ErrRemoteCall error", errRemoteCall.Error())
 
 	// Get a key that is guaranteed to return an internal (500) error
-	err = g.Get(ctx, "IReturnInternalError", StringSink(&value), nil)
+	err = g.Get(ctx, "IReturnInternalError", StringSink(&value), nil, 0)
 	assert.Equal(t, "I am a errors.New() error", err.Error())
 
 }
@@ -231,7 +232,8 @@ func beChildForTestHTTPPool(t *testing.T) {
 	p := NewHTTPPool(DefaultWorkspace, "http://"+addrs[*peerIndex])
 	p.Set(addrToURL(addrs)...)
 
-	getter := GetterFunc(func(ctx context.Context, key string, dest Sink, info *Info) error {
+	getter := GetterFunc(func(ctx context.Context, key string, dest Sink,
+		info *Info, statClass int) error {
 		if key == "IReturnErrNotFound" {
 			return &ErrNotFound{Msg: "I am a ErrNotFound error"}
 		}
@@ -346,7 +348,8 @@ func TestGetWithUserinfo(t *testing.T) {
 		Name:            groupName,
 		CacheBytesLimit: 1_000_000,
 		Getter: GetterFunc(
-			func(ctx context.Context, key string, dest Sink, info *Info) error {
+			func(ctx context.Context, key string, dest Sink, info *Info,
+				statClass int) error {
 
 				if info == nil {
 					t.Errorf("group getter missing userinfo")
@@ -376,12 +379,14 @@ func TestGetWithUserinfo(t *testing.T) {
 	key := "key1"
 	ctx1 := expectedCtx1
 	ctx2 := expectedCtx2
+	statClass := int64(0)
 
 	req := &pb.GetRequest{
-		Group: &groupName,
-		Key:   &key,
-		Ctx1:  &ctx1,
-		Ctx2:  &ctx2,
+		Group:     &groupName,
+		Key:       &key,
+		Ctx1:      &ctx1,
+		Ctx2:      &ctx2,
+		StatClass: &statClass,
 	}
 
 	res := &pb.GetResponse{}

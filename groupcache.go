@@ -48,14 +48,17 @@ type Getter interface {
 	// uniquely describe the loaded data, without an implicit
 	// current time, and without relying on cache expiration
 	// mechanisms.
-	Get(ctx context.Context, key string, dest Sink, info *Info) error
+	Get(ctx context.Context, key string, dest Sink, info *Info,
+		statClass int) error
 }
 
 // A GetterFunc implements Getter with a function.
-type GetterFunc func(ctx context.Context, key string, dest Sink, info *Info) error
+type GetterFunc func(ctx context.Context, key string, dest Sink,
+	info *Info, statClass int) error
 
-func (f GetterFunc) Get(ctx context.Context, key string, dest Sink, info *Info) error {
-	return f(ctx, key, dest, info)
+func (f GetterFunc) Get(ctx context.Context, key string, dest Sink,
+	info *Info, statClass int) error {
+	return f(ctx, key, dest, info, statClass)
 }
 
 // GetGroup returns the named group previously created with NewGroup, or
@@ -118,6 +121,14 @@ type Options struct {
 	// If defined, groupcache will log errors retrieving keys from peers.
 	// slog.Defaut() creates a logger that satifiest this interface.
 	Logger Logger
+
+	// StatClasses is the number of stat classes to use.
+	// It only affects stats and does not affect any behavior.
+	// StatClasses set to 1 or below means only one stat class, the default one.
+	// StatClasses set to 2 means two stat classes.
+	// StatClasses set to 3 means three stat classes.
+	// etc.
+	StatClasses int
 }
 
 // Logger is interface for pluggable logger.
@@ -157,7 +168,7 @@ func NewGroup(options Options) *Group {
 	return newGroup(options.Workspace, options.Name, options.PurgeExpired,
 		options.CacheBytesLimit, options.MainCacheWeight, options.HotCacheWeight,
 		options.ExpiredKeysEvictionInterval, options.PeerLatencyWindow,
-		options.Getter, nil, options.Logger)
+		options.Getter, nil, options.Logger, options.StatClasses)
 }
 
 // If peers is nil, the peerPicker is called via a sync.Once to initialize it.
@@ -165,10 +176,16 @@ func newGroup(ws *Workspace, name string, purgeExpired bool, cacheBytesLimit,
 	mainCacheWeight, hotCacheWeight int64,
 	expiredKeysEvictionInterval, peerLatencyWindow time.Duration,
 	getter Getter,
-	peers PeerPicker, logger Logger) *Group {
+	peers PeerPicker, logger Logger,
+	statClasses int) *Group {
+
 	if getter == nil {
 		panic("nil Getter")
 	}
+	if statClasses < 1 {
+		statClasses = 1
+	}
+
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if _, dup := ws.groups[name]; dup {
@@ -188,6 +205,8 @@ func newGroup(ws *Workspace, name string, purgeExpired bool, cacheBytesLimit,
 		setGroup:          &singleflight.Group{},
 		removeGroup:       &singleflight.Group{},
 		peerLatencyWindow: peerLatencyWindow,
+		mainCache:         newCache(statClasses),
+		hotCache:          newCache(statClasses),
 	}
 	ws.groups[name] = g
 
@@ -313,25 +332,46 @@ func (g *Group) initPeers() {
 // Get retrieves key for library caller, thus crosstalk is allowed.
 // info holds optional user-supplied per-request context fields that are
 // propagated to the peer getter load function.
-func (g *Group) Get(ctx context.Context, key string, dest Sink, info *Info) error {
+// statClass is used to group stats of a set of keys under the same index.
+// statClass only affects stats and does not affect any behavior.
+// Set statClass to 0 for the default stat class.
+// The number of stat classes must be previously defined in Options.StatClasses.
+func (g *Group) Get(ctx context.Context, key string, dest Sink, info *Info,
+	statClass int) error {
 	const crosstalkAllowed = true
-	return g.get(ctx, key, dest, crosstalkAllowed, info)
+	return g.get(ctx, key, dest, crosstalkAllowed, info, statClass)
 }
 
-// GetForPeer retrieves key for peer in a crosstalk request, thus further crosstalk won't be allowed.
-func (g *Group) GetForPeer(ctx context.Context, key string, dest Sink, info *Info) error {
+// GetForPeer retrieves key for peer in a crosstalk request,
+// thus further crosstalk won't be allowed.
+func (g *Group) GetForPeer(ctx context.Context, key string, dest Sink,
+	info *Info, statClass int) error {
 	const crosstalkAllowed = false
-	return g.get(ctx, key, dest, crosstalkAllowed, info)
+	return g.get(ctx, key, dest, crosstalkAllowed, info, statClass)
+}
+
+// clampStatClass ensures statClass is within the valid range of stat
+// classes.
+func (g *Group) clampStatClass(statClass int) int {
+	if statClass < 0 || statClass >= len(g.mainCache.class) {
+		// statClass is out of range, use default stat class 0.
+		// statClass only affects stats and does not affect any behavior.
+		return 0
+	}
+	return statClass
 }
 
 func (g *Group) get(ctx context.Context, key string, dest Sink,
-	crosstalkAllowed bool, info *Info) error {
+	crosstalkAllowed bool, info *Info, statClass int) error {
 	g.peersOnce.Do(g.initPeers)
 	g.Stats.Gets.Add(1)
 	if dest == nil {
 		return errors.New("groupcache: nil dest Sink")
 	}
-	value, cacheHit := g.lookupCache(key)
+
+	statClass = g.clampStatClass(statClass)
+
+	value, cacheHit := g.lookupCache(key, statClass)
 
 	if cacheHit {
 		g.Stats.CacheHits.Add(1)
@@ -342,7 +382,8 @@ func (g *Group) get(ctx context.Context, key string, dest Sink,
 	// track of whether the dest was already populated. One caller
 	// (if local) will set this; the losers will not. The common
 	// case will likely be one caller.
-	value, destPopulated, err := g.load(ctx, key, dest, crosstalkAllowed, info)
+	value, destPopulated, err := g.load(ctx, key, dest, crosstalkAllowed,
+		info, statClass)
 	if err != nil {
 		return err
 	}
@@ -352,29 +393,34 @@ func (g *Group) get(ctx context.Context, key string, dest Sink,
 	return setSinkView(dest, value)
 }
 
-func (g *Group) Set(ctx context.Context, key string, value []byte, expire time.Time, hotCache bool) error {
+func (g *Group) Set(ctx context.Context, key string, value []byte,
+	expire time.Time, statClass int, hotCache bool) error {
+
 	g.peersOnce.Do(g.initPeers)
 
 	if key == "" {
 		return errors.New("empty Set() key not allowed")
 	}
 
+	statClass = g.clampStatClass(statClass)
+
 	_, err := g.setGroup.Do(key, func() (any, error) {
 		// If remote peer owns this key
 		owner, ok := g.peers.PickPeer(key)
 		if ok {
-			if err := g.setFromPeer(ctx, owner, key, value, expire); err != nil {
+			if err := g.setFromPeer(ctx, owner, key, value, expire,
+				statClass); err != nil {
 				return nil, err
 			}
 			// TODO(thrawn01): Not sure if this is useful outside of tests...
 			//  maybe we should ALWAYS update the local cache?
 			if hotCache {
-				g.localSet(key, value, expire, &g.hotCache)
+				g.localSet(key, value, expire, statClass, &g.hotCache)
 			}
 			return nil, nil
 		}
 		// We own this key
-		g.localSet(key, value, expire, &g.mainCache)
+		g.localSet(key, value, expire, statClass, &g.mainCache)
 		return nil, nil
 	})
 	return err
@@ -433,7 +479,8 @@ var errFurtherCrosstalkRefused = errors.New("further crosstalk refused")
 
 // load loads key either by invoking the getter locally or by sending it to another machine.
 func (g *Group) load(ctx context.Context, key string, dest Sink,
-	crosstalkAllowed bool, info *Info) (value ByteView, destPopulated bool, err error) {
+	crosstalkAllowed bool, info *Info, statClass int) (value ByteView,
+	destPopulated bool, err error) {
 	g.Stats.Loads.Add(1)
 	viewi, err := g.loadGroup.Do(key, func() (any, error) {
 		// Check the cache again because singleflight can only dedup calls
@@ -457,7 +504,7 @@ func (g *Group) load(ctx context.Context, key string, dest Sink,
 		// 1: fn()
 		// 2: loadGroup.Do("key", fn)
 		// 2: fn()
-		if value, cacheHit := g.lookupCache(key); cacheHit {
+		if value, cacheHit := g.lookupCache(key, statClass); cacheHit {
 			g.Stats.CacheHits.Add(1)
 			return value, nil
 		}
@@ -479,7 +526,7 @@ func (g *Group) load(ctx context.Context, key string, dest Sink,
 			start := time.Now()
 
 			// get value from peers
-			value, err = g.getFromPeer(ctx, peer, key, info)
+			value, err = g.getFromPeer(ctx, peer, key, info, statClass)
 
 			end := time.Now()
 
@@ -531,7 +578,7 @@ func (g *Group) load(ctx context.Context, key string, dest Sink,
 		//   2. the crosstalk peer request above failed with an unexpected error
 		//      FIXME TODO XXX: we are currently generating the key by ourselves, but should we?
 
-		value, err = g.getLocally(ctx, key, dest, info)
+		value, err = g.getLocally(ctx, key, dest, info, statClass)
 		if err != nil {
 			g.Stats.LocalLoadErrs.Add(1)
 			return nil, err
@@ -561,20 +608,29 @@ func (g *Group) recordPeerLoadLatency(duration int64, now time.Time) {
 	}
 }
 
-func (g *Group) getLocally(ctx context.Context, key string, dest Sink, info *Info) (ByteView, error) {
-	err := g.getter.Get(ctx, key, dest, info)
+func (g *Group) getLocally(ctx context.Context, key string, dest Sink,
+	info *Info, statClass int) (ByteView, error) {
+	err := g.getter.Get(ctx, key, dest, info, statClass)
 	if err != nil {
 		return ByteView{}, err
 	}
-	return dest.view()
+	bv, err := dest.view()
+	if err != nil {
+		return ByteView{}, err
+	}
+	bv.c = statClass
+	return bv, nil
 }
 
 func (g *Group) getFromPeer(ctx context.Context, peer ProtoGetter,
-	key string, info *Info) (ByteView, error) {
+	key string, info *Info, statClass int) (ByteView, error) {
+
+	sc := int64(statClass)
 
 	req := &pb.GetRequest{
-		Group: &g.name,
-		Key:   &key,
+		Group:     &g.name,
+		Key:       &key,
+		StatClass: &sc,
 	}
 
 	if info != nil {
@@ -597,48 +653,53 @@ func (g *Group) getFromPeer(ctx context.Context, peer ProtoGetter,
 		}
 	}
 
-	value := ByteView{b: res.Value, e: expire}
+	value := ByteView{b: res.Value, e: expire, c: statClass}
 
 	// Always populate the hot cache
 	g.populateCache(key, value, &g.hotCache)
 	return value, nil
 }
 
-func (g *Group) setFromPeer(ctx context.Context, peer ProtoGetter, k string, v []byte, e time.Time) error {
+func (g *Group) setFromPeer(ctx context.Context, peer ProtoGetter, k string,
+	v []byte, e time.Time, statClass int) error {
 	var expire int64
 	if !e.IsZero() {
 		expire = e.UnixNano()
 	}
+	sc := int64(statClass)
 	req := &pb.SetRequest{
-		Expire: &expire,
-		Group:  &g.name,
-		Key:    &k,
-		Value:  v,
+		Expire:    &expire,
+		Group:     &g.name,
+		Key:       &k,
+		Value:     v,
+		StatClass: &sc,
 	}
 	return peer.Set(ctx, req)
 }
 
 func (g *Group) removeFromPeer(ctx context.Context, peer ProtoGetter, key string) error {
+	statClass := int64(0)
 	req := &pb.GetRequest{
-		Group: &g.name,
-		Key:   &key,
+		Group:     &g.name,
+		Key:       &key,
+		StatClass: &statClass,
 	}
 	return peer.Remove(ctx, req)
 }
 
-func (g *Group) lookupCache(key string) (value ByteView, ok bool) {
+func (g *Group) lookupCache(key string, statClass int) (value ByteView, ok bool) {
 	if g.cacheBytesLimit <= 0 {
 		return
 	}
-	value, ok = g.mainCache.get(key)
+	value, ok = g.mainCache.get(key, statClass)
 	if ok {
 		return
 	}
-	value, ok = g.hotCache.get(key)
+	value, ok = g.hotCache.get(key, statClass)
 	return
 }
 
-func (g *Group) localSet(key string, value []byte, expire time.Time, cache *cache) {
+func (g *Group) localSet(key string, value []byte, expire time.Time, statClass int, cache *cache) {
 	if g.cacheBytesLimit <= 0 {
 		return
 	}
@@ -646,6 +707,7 @@ func (g *Group) localSet(key string, value []byte, expire time.Time, cache *cach
 	bv := ByteView{
 		b: value,
 		e: expire,
+		c: statClass,
 	}
 
 	// Ensure no requests are in flight
@@ -754,14 +816,14 @@ const (
 )
 
 // CacheStats returns stats about the provided cache within the group.
-func (g *Group) CacheStats(which CacheType) CacheStats {
+func (g *Group) CacheStats(which CacheType) []CacheStats {
 	switch which {
 	case MainCache:
 		return g.mainCache.stats()
 	case HotCache:
 		return g.hotCache.stats()
 	default:
-		return CacheStats{}
+		return nil
 	}
 }
 
@@ -774,25 +836,58 @@ var NowFunc lru.NowFunc = time.Now
 // makes values always be ByteView, and counts the size of all keys and
 // values.
 type cache struct {
-	mu                        sync.RWMutex
-	nbytes                    int64 // of all keys and values
-	lru                       *lru.Cache
+	mu  sync.RWMutex
+	lru *lru.Cache
+
+	// cache global nbytes is kept in this
+	// level for fast queries
+	// (eg for evaluating evictions).
+	nbytes int64 // of all keys and values
+
+	class []classStats
+}
+
+// classStats holds stats per class.
+type classStats struct {
+	nbytes                    int64
+	nitems                    int64
 	nhit, nget                int64
 	nevict                    int64 // number of evictions
 	nevictNonExpiredOnMemFull int64 // number of evictions for non-expired items on mem full condition
 }
 
-func (c *cache) stats() CacheStats {
+func newCache(statClasses int) cache {
+	return cache{
+		class: make([]classStats, statClasses),
+	}
+}
+
+func (c *cache) getEvictions() int64 {
+	var nevict int64
+	for _, v := range c.class {
+		nevict += v.nevict
+	}
+	return nevict
+}
+
+func (c *cache) stats() []CacheStats {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return CacheStats{
-		Bytes:                        c.nbytes,
-		Items:                        c.itemsLocked(),
-		Gets:                         c.nget,
-		Hits:                         c.nhit,
-		Evictions:                    c.nevict,
-		EvictionsNonExpiredOnMemFull: c.nevictNonExpiredOnMemFull,
+
+	s := make([]CacheStats, len(c.class))
+
+	for i, v := range c.class {
+		s[i] = CacheStats{
+			Bytes:                        v.nbytes,
+			Items:                        v.nitems,
+			Gets:                         v.nget,
+			Hits:                         v.nhit,
+			Evictions:                    v.nevict,
+			EvictionsNonExpiredOnMemFull: v.nevictNonExpiredOnMemFull,
+		}
 	}
+
+	return s
 }
 
 func (c *cache) add(key string, value ByteView) {
@@ -803,22 +898,29 @@ func (c *cache) add(key string, value ByteView) {
 			Now: NowFunc,
 			OnEvicted: func(key lru.Key, value any, nonExpiredAndMemFull bool) {
 				val := value.(ByteView)
-				c.nbytes -= int64(len(key.(string))) + int64(val.Len())
-				c.nevict++
+				sc := val.c
+				deltaBytes := int64(len(key.(string))) + int64(val.Len())
+				c.nbytes -= deltaBytes
+				c.class[sc].nbytes -= deltaBytes
+				c.class[sc].nitems--
+				c.class[sc].nevict++
 				if nonExpiredAndMemFull {
-					c.nevictNonExpiredOnMemFull++
+					c.class[sc].nevictNonExpiredOnMemFull++
 				}
 			},
 		}
 	}
 	c.lru.Add(key, value, value.Expire())
-	c.nbytes += int64(len(key)) + int64(value.Len())
+	deltaBytes := int64(len(key)) + int64(value.Len())
+	c.nbytes += deltaBytes
+	c.class[value.c].nbytes += deltaBytes
+	c.class[value.c].nitems++
 }
 
-func (c *cache) get(key string) (value ByteView, ok bool) {
+func (c *cache) get(key string, statClass int) (value ByteView, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.nget++
+	c.class[statClass].nget++
 	if c.lru == nil {
 		return
 	}
@@ -826,7 +928,7 @@ func (c *cache) get(key string) (value ByteView, ok bool) {
 	if !ok {
 		return
 	}
-	c.nhit++
+	c.class[statClass].nhit++
 	return vi.(ByteView), true
 }
 

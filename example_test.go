@@ -40,7 +40,8 @@ func Example() {
 		PurgeExpired:    purgeExpired,
 		CacheBytesLimit: 3_000_000,
 		Getter: groupcache.GetterFunc(
-			func(ctx context.Context, id string, dest groupcache.Sink, info *groupcache.Info) error {
+			func(ctx context.Context, id string, dest groupcache.Sink,
+				info *groupcache.Info, _ int) error {
 
 				// In a real scenario we might fetch the value from a database.
 				/*if user, err := fetchUserFromMongo(ctx, id); err != nil {
@@ -68,7 +69,8 @@ func Example() {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	if err := group.Get(ctx, "12345", groupcache.ProtoSink(&user), nil); err != nil {
+	if err := group.Get(ctx, "12345", groupcache.ProtoSink(&user), nil,
+		0); err != nil {
 		log.Fatal(err)
 	}
 
